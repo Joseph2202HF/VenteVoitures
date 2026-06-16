@@ -55,8 +55,7 @@ npm run dev
 ### Achat
 
 ![Achats](screenshots/achats.png)
-## Auteur 
-Jean Joseph 🇲🇬
+## Auteur : Jean Joseph 🇲🇬
 
 Projet réalisé dans le cadre d'un apprentissage du développement web full-stack.
 
