@@ -1,38 +1,219 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import * as api from '../api/index'
-import { 
-  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
-  BarChart, Bar, Legend, PieChart, Pie, Cell
+import {
+  AreaChart, Area, XAxis, YAxis, Tooltip,
+  ResponsiveContainer, CartesianGrid
 } from 'recharts'
-import { 
-  BanknotesIcon, ShoppingCartIcon, UserGroupIcon, TruckIcon,
-  ArrowTrendingUpIcon, ArrowTrendingDownIcon
+import {
+  BanknotesIcon,
+  ShoppingCartIcon,
+  UserGroupIcon,
+  TruckIcon,
+  ExclamationTriangleIcon,
+  ArrowTrendingUpIcon,
+  ArrowTrendingDownIcon
 } from '@heroicons/react/24/outline'
-import { fmt } from '../utils/format'
 
-const COLORS = ['#0f172a', '#334155', '#475569', '#64748b', '#94a3b8', '#cbd5e1']
+/* ── Formatage ───────────────────────────────────────────────── */
+const fmt = (n) =>
+  Number(n || 0).toLocaleString('fr-FR') + ' Ar'
 
+/* ── Tooltip personnalisé ────────────────────────────────────── */
 const CustomTooltip = ({ active, payload, label }) => {
-  if (active && payload?.length) {
-    return (
-      <div className="bg-white border border-slate-200 rounded-lg px-3 py-2 shadow-lg text-xs">
-        <p className="text-slate-500 mb-0.5">{label}</p>
-        {payload.map((p, i) => (
-          <p key={i} className="font-bold text-slate-800">{p.name}: {fmt(p.value)} Ar</p>
-        ))}
-      </div>
-    )
-  }
-  return null
+  if (!active || !payload?.length) return null
+  return (
+    <div style={{
+      background: '#fff',
+      border: '0.5px solid #d0d0d0',
+      borderRadius: 8,
+      padding: '8px 12px',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+      fontSize: 13
+    }}>
+      <p style={{ color: '#888', fontSize: 11, marginBottom: 2 }}>{label}</p>
+      <p style={{ fontWeight: 500, color: '#1c1c1e' }}>{fmt(payload[0].value)}</p>
+    </div>
+  )
 }
 
-const EmptyState = ({ message }) => (
-  <div className="flex flex-col items-center justify-center py-16 text-slate-400">
-    <ShoppingCartIcon className="w-10 h-10 mb-2" />
-    <p className="text-sm">{message}</p>
-  </div>
-)
+/* ── KPI Card ─────────────────────────────────────────────────── */
+function KpiCard({ label, value, icon: Icon, trend, isMoney, alert }) {
+  return (
+    <div style={{
+      background: '#fff',
+      border: '0.5px solid #e0e0e0',
+      borderRadius: 12,
+      padding: '14px 16px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 8
+    }}>
+      {/* Ligne haute : icône + badge */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{
+          width: 32,
+          height: 32,
+          borderRadius: 8,
+          background: '#f5f5f5',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <Icon style={{ width: 16, height: 16, color: '#5f5f5f' }} />
+        </div>
 
+        {trend !== undefined && trend !== 0 && (
+          <span style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 3,
+            fontSize: 11,
+            fontWeight: 500,
+            padding: '2px 8px',
+            borderRadius: 99,
+            background: trend > 0 ? '#e8f5e9' : '#fce8e6',
+            color: trend > 0 ? '#2e7d32' : '#c5221f'
+          }}>
+            {trend > 0
+              ? <ArrowTrendingUpIcon style={{ width: 12, height: 12 }} />
+              : <ArrowTrendingDownIcon style={{ width: 12, height: 12 }} />
+            }
+            {Math.abs(trend).toFixed(0)} %
+          </span>
+        )}
+
+        {alert > 0 && (
+          <span style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 3,
+            fontSize: 11,
+            fontWeight: 500,
+            padding: '2px 8px',
+            borderRadius: 99,
+            background: '#fff8e1',
+            color: '#b06000'
+          }}>
+            <ExclamationTriangleIcon style={{ width: 12, height: 12 }} />
+            {alert} faible{alert > 1 ? 's' : ''}
+          </span>
+        )}
+      </div>
+
+      {/* Valeur */}
+      <p style={{
+        fontSize: isMoney ? 17 : 24,
+        fontWeight: 500,
+        color: '#1c1c1e',
+        letterSpacing: '-0.02em',
+        lineHeight: 1
+      }}>
+        {isMoney ? fmt(value) : value}
+      </p>
+
+      {/* Label */}
+      <p style={{ fontSize: 12, color: '#888', marginTop: -2 }}>{label}</p>
+    </div>
+  )
+}
+
+/* ── Section title ───────────────────────────────────────────── */
+function SectionLabel({ children }) {
+  return (
+    <p style={{
+      fontSize: 11,
+      fontWeight: 500,
+      color: '#888',
+      textTransform: 'uppercase',
+      letterSpacing: '0.06em',
+      marginBottom: 12
+    }}>
+      {children}
+    </p>
+  )
+}
+
+/* ── Card wrapper ────────────────────────────────────────────── */
+function Card({ children, style }) {
+  return (
+    <div style={{
+      background: '#fff',
+      border: '0.5px solid #e0e0e0',
+      borderRadius: 12,
+      padding: '16px 18px',
+      ...style
+    }}>
+      {children}
+    </div>
+  )
+}
+
+/* ── Ligne client/véhicule ───────────────────────────────────── */
+function RankedRow({ rank, primary, secondary, right }) {
+  const isFirst = rank === 1
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      padding: '6px 8px',
+      borderRadius: 8,
+      cursor: 'default'
+    }}
+      onMouseEnter={e => e.currentTarget.style.background = '#f7f7f7'}
+      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+    >
+      <span style={{
+        fontSize: 11,
+        fontWeight: 500,
+        width: 16,
+        textAlign: 'right',
+        flexShrink: 0,
+        color: isFirst ? '#b06000' : '#bbb'
+      }}>
+        {rank}
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{
+          fontSize: 13,
+          fontWeight: 500,
+          color: '#1c1c1e',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap'
+        }}>
+          {primary}
+        </p>
+        <p style={{ fontSize: 11, color: '#aaa', marginTop: 1 }}>{secondary}</p>
+      </div>
+      {right && (
+        <p style={{ fontSize: 12, fontWeight: 500, color: '#3c3c3e', whiteSpace: 'nowrap' }}>
+          {right}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/* ── Empty state ─────────────────────────────────────────────── */
+function Empty({ message = 'Aucune donnée' }) {
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      height: 80,
+      fontSize: 13,
+      color: '#bbb'
+    }}>
+      {message}
+    </div>
+  )
+}
+
+/* ══════════════════════════════════════════════════════════════ */
+/*  Composant principal Stats                                     */
+/* ══════════════════════════════════════════════════════════════ */
 export default function Stats() {
   const [recettes, setRecettes] = useState([])
   const [clients, setClients] = useState([])
@@ -55,188 +236,219 @@ export default function Stats() {
       setClients(Array.isArray(cli) ? cli : [])
       setVoitures(Array.isArray(voi) ? voi : [])
       setAchats(Array.isArray(ach) ? ach : [])
-    } catch(e) { console.error(e) }
-    finally { setLoading(false) }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  // Calculs
+  /* ── Calculs ────────────────────────────────────────────────── */
   const totalRevenu = recettes.reduce((s, r) => s + Number(r.total || 0), 0)
-  const nombreVentes = achats.length
-  const nombreClients = clients.length
-  const stockDisponible = voitures.reduce((s, v) => s + Number(v.nombre || 0), 0)
 
   const evolution = useMemo(() => {
     if (recettes.length < 2) return 0
-    const dernier = recettes[recettes.length - 1]?.total || 0
-    const precedent = recettes[recettes.length - 2]?.total || 0
-    return precedent > 0 ? ((dernier - precedent) / precedent) * 100 : 0
+    const a = Number(recettes[recettes.length - 1]?.total || 0)
+    const b = Number(recettes[recettes.length - 2]?.total || 0)
+    return b > 0 ? ((a - b) / b) * 100 : 0
   }, [recettes])
 
-  // Top clients
+  const stockTotal = voitures.reduce((s, v) => s + Number(v.nombre || 0), 0)
+  const stockFaible = voitures.filter(v => Number(v.nombre) <= 2).length
+
   const topClients = useMemo(() => {
-    const map = {}
+    const m = {}
     achats.forEach(a => {
-      const client = clients.find(c => c.idcli === a.idcli)
-      const nom = client?.nom || a.idcli
-      if (!map[a.idcli]) map[a.idcli] = { name: nom, total: 0, count: 0 }
-      map[a.idcli].total += Number(a.total || 0)
-      map[a.idcli].count += 1
+      const c = clients.find(x => x.idcli === a.idcli)
+      if (!m[a.idcli]) m[a.idcli] = { name: c?.nom || a.idcli, total: 0, count: 0 }
+      m[a.idcli].total += Number(a.total || 0)
+      m[a.idcli].count += 1
     })
-    return Object.values(map).sort((a, b) => b.total - a.total).slice(0, 5)
+    return Object.values(m).sort((a, b) => b.total - a.total).slice(0, 5)
   }, [achats, clients])
 
-  // Top voitures
   const topVoitures = useMemo(() => {
-    const map = {}
+    const m = {}
     achats.forEach(a => {
-      const v = voitures.find(v => v.idvoit === a.idvoit)
-      const name = v?.design || a.idvoit
-      if (!map[a.idvoit]) map[a.idvoit] = { name, count: 0, value: 0 }
-      map[a.idvoit].count += Number(a.qte || 1)
-      map[a.idvoit].value += Number(a.total || 0)
+      const v = voitures.find(x => x.idvoit === a.idvoit)
+      if (!m[a.idvoit]) m[a.idvoit] = { name: v?.design || a.idvoit, total: 0, count: 0 }
+      m[a.idvoit].total += Number(a.total || 0)
+      m[a.idvoit].count += Number(a.qte || 1)
     })
-    return Object.values(map).sort((a, b) => b.count - a.count).slice(0, 6)
+    return Object.values(m).sort((a, b) => b.count - a.count).slice(0, 5)
   }, [achats, voitures])
 
-  // Achats par mois (pour le bar chart)
-  const achatsParMois = useMemo(() => {
-    const map = {}
-    achats.forEach(a => {
-      const date = new Date(a.date)
-      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-      if (!map[key]) map[key] = { month: key, count: 0, total: 0 }
-      map[key].count += 1
-      map[key].total += Number(a.total || 0)
-    })
-    return Object.values(map).sort((a, b) => a.month.localeCompare(b.month)).slice(-6)
-  }, [achats])
+  /* ── Loading ────────────────────────────────────────────────── */
+  if (loading) return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      height: 320
+    }}>
+      <div style={{
+        width: 28,
+        height: 28,
+        border: '2px solid #e0e0e0',
+        borderTopColor: '#5f5f5f',
+        borderRadius: '50%',
+        animation: 'spin 0.8s linear infinite'
+      }} />
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+    </div>
+  )
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-6 h-6 border-2 border-slate-200 border-t-slate-600 rounded-full animate-spin" />
-      </div>
-    )
-  }
-
+  /* ── Rendu ──────────────────────────────────────────────────── */
   return (
-    <div className="space-y-6">
-      <h1 className="text-xl font-bold text-slate-900">Tableau de bord</h1>
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 20,
+      paddingBottom: 32
+    }}>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <div className="flex justify-between items-start mb-2">
-            <BanknotesIcon className="w-5 h-5 text-slate-400" />
-            {evolution !== 0 && (
-              <span className={`text-xs font-medium flex items-center gap-0.5 ${evolution > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                {evolution > 0 ? <ArrowTrendingUpIcon className="w-3 h-3" /> : <ArrowTrendingDownIcon className="w-3 h-3" />}
-                {Math.abs(evolution).toFixed(0)}%
-              </span>
-            )}
-          </div>
-          <p className="text-xl font-bold text-slate-900">{fmt(totalRevenu)} Ar</p>
-          <p className="text-xs text-slate-500 mt-0.5">Revenu total</p>
-        </div>
+      {/* Titre */}
+      <h1 style={{
+        fontSize: 18,
+        fontWeight: 500,
+        color: '#1c1c1e',
+        letterSpacing: '-0.01em'
+      }}>
+        Tableau de bord
+      </h1>
 
-        <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <ShoppingCartIcon className="w-5 h-5 text-slate-400 mb-2" />
-          <p className="text-xl font-bold text-slate-900">{nombreVentes}</p>
-          <p className="text-xs text-slate-500 mt-0.5">Ventes réalisées</p>
-        </div>
-
-        <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <UserGroupIcon className="w-5 h-5 text-slate-400 mb-2" />
-          <p className="text-xl font-bold text-slate-900">{nombreClients}</p>
-          <p className="text-xs text-slate-500 mt-0.5">Clients enregistrés</p>
-        </div>
-
-        <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <TruckIcon className="w-5 h-5 text-slate-400 mb-2" />
-          <p className="text-xl font-bold text-slate-900">{stockDisponible}</p>
-          <p className="text-xs text-slate-500 mt-0.5">Véhicules en stock</p>
-        </div>
+      {/* ── KPIs ──────────────────────────────────────────────── */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+        gap: 10
+      }}>
+        <KpiCard
+          label="Revenu total"
+          value={totalRevenu}
+          icon={BanknotesIcon}
+          trend={evolution}
+          isMoney
+        />
+        <KpiCard
+          label="Ventes"
+          value={achats.length}
+          icon={ShoppingCartIcon}
+        />
+        <KpiCard
+          label="Clients"
+          value={clients.length}
+          icon={UserGroupIcon}
+        />
+        <KpiCard
+          label="En stock"
+          value={stockTotal}
+          icon={TruckIcon}
+          alert={stockFaible}
+        />
       </div>
 
-      {/* Graphique des recettes */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6">
-        <h2 className="text-sm font-semibold text-slate-700 mb-4">Évolution des recettes</h2>
+      {/* ── Graphique recettes ────────────────────────────────── */}
+      <Card>
+        <SectionLabel>Évolution des recettes</SectionLabel>
         {recettes.length > 0 ? (
-          <ResponsiveContainer width="100%" height={250}>
-            <AreaChart data={recettes} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+          <ResponsiveContainer width="100%" height={220}>
+            <AreaChart
+              data={recettes}
+              margin={{ top: 4, right: 4, left: -20, bottom: 0 }}
+            >
               <defs>
-                <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#0f172a" stopOpacity={0.15} />
-                  <stop offset="95%" stopColor="#0f172a" stopOpacity={0} />
+                <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#1c1c1e" stopOpacity={0.07} />
+                  <stop offset="100%" stopColor="#1c1c1e" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} axisLine={false} dy={8} />
-              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} tickFormatter={v => (v/1e6).toFixed(1)+'M'} tickLine={false} axisLine={false} dx={-4} />
+
+              <CartesianGrid
+                strokeDasharray="3 3"
+                vertical={false}
+                stroke="#f0f0f0"
+              />
+
+              <XAxis
+                dataKey="label"
+                tick={{ fontSize: 11, fill: '#aaa', fontWeight: 400 }}
+                tickLine={false}
+                axisLine={false}
+                dy={6}
+              />
+
+              <YAxis
+                tick={{ fontSize: 11, fill: '#aaa', fontWeight: 400 }}
+                tickFormatter={v => (v / 1_000_000).toFixed(1) + 'M'}
+                tickLine={false}
+                axisLine={false}
+              />
+
               <Tooltip content={<CustomTooltip />} />
-              <Area type="monotone" dataKey="total" stroke="#0f172a" strokeWidth={2} fill="url(#rev)"
-                dot={{ r: 4, fill: '#0f172a', strokeWidth: 2, stroke: '#fff' }}
-                activeDot={{ r: 6, fill: '#0f172a', strokeWidth: 2, stroke: '#fff' }} />
+
+              <Area
+                type="monotone"
+                dataKey="total"
+                stroke="#1c1c1e"
+                strokeWidth={1.5}
+                fill="url(#areaGrad)"
+                dot={{ r: 3, fill: '#1c1c1e', strokeWidth: 0 }}
+                activeDot={{ r: 5, fill: '#1c1c1e', strokeWidth: 0 }}
+              />
             </AreaChart>
           </ResponsiveContainer>
-        ) : <EmptyState message="Aucune recette enregistrée" />}
-      </div>
+        ) : (
+          <Empty message="Aucune recette enregistrée" />
+        )}
+      </Card>
 
-      {/* Achats par mois + Répartition */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Bar chart achats par mois */}
-        <div className="bg-white rounded-xl border border-slate-200 p-6">
-          <h2 className="text-sm font-semibold text-slate-700 mb-4">Achats par mois</h2>
-          {achatsParMois.length > 0 ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={achatsParMois} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} axisLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} axisLine={false} allowDecimals={false} />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="count" name="Achats" fill="#0f172a" radius={[4, 4, 0, 0]} maxBarSize={40} />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : <EmptyState message="Aucun achat ce mois" />}
-        </div>
+      {/* ── Top clients + Top véhicules ───────────────────────── */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+        gap: 10
+      }}>
 
-        {/* Pie chart répartition */}
-        <div className="bg-white rounded-xl border border-slate-200 p-6">
-          <h2 className="text-sm font-semibold text-slate-700 mb-4">Répartition par véhicule</h2>
+        {/* Top clients */}
+        <Card>
+          <SectionLabel>Top clients</SectionLabel>
+          {topClients.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {topClients.map((c, i) => (
+                <RankedRow
+                  key={i}
+                  rank={i + 1}
+                  primary={c.name}
+                  secondary={`${c.count} achat${c.count > 1 ? 's' : ''}`}
+                  right={fmt(c.total)}
+                />
+              ))}
+            </div>
+          ) : (
+            <Empty message="Aucune vente" />
+          )}
+        </Card>
+
+        {/* Top véhicules */}
+        <Card>
+          <SectionLabel>Véhicules les plus vendus</SectionLabel>
           {topVoitures.length > 0 ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie data={topVoitures} dataKey="count" nameKey="name" cx="50%" cy="50%" outerRadius={80} innerRadius={45}
-                  paddingAngle={2}>
-                  {topVoitures.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                </Pie>
-                <Tooltip content={<CustomTooltip />} />
-                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '11px', color: '#64748b' }} />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : <EmptyState message="Aucune vente" />}
-        </div>
-      </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {topVoitures.map((v, i) => (
+                <RankedRow
+                  key={i}
+                  rank={i + 1}
+                  primary={v.name}
+                  secondary={`${v.count} vendu${v.count > 1 ? 's' : ''} · ${fmt(v.total)}`}
+                />
+              ))}
+            </div>
+          ) : (
+            <Empty message="Aucune vente" />
+          )}
+        </Card>
 
-      {/* Top clients */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6">
-        <h2 className="text-sm font-semibold text-slate-700 mb-4">Meilleurs clients</h2>
-        {topClients.length > 0 ? (
-          <div className="space-y-1">
-            {topClients.map((c, i) => (
-              <div key={i} className="flex items-center justify-between py-2.5 px-3 rounded-lg hover:bg-slate-50 transition-colors">
-                <div className="flex items-center gap-3">
-                  <span className={`text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center ${i === 0 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'}`}>{i + 1}</span>
-                  <div>
-                    <p className="text-sm font-medium text-slate-800">{c.name}</p>
-                    <p className="text-xs text-slate-400">{c.count} achat(s)</p>
-                  </div>
-                </div>
-                <p className="text-sm font-semibold text-slate-700">{fmt(c.total)} Ar</p>
-              </div>
-            ))}
-          </div>
-        ) : <EmptyState message="Aucune vente enregistrée" />}
       </div>
     </div>
   )
