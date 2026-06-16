@@ -4,7 +4,6 @@ class FactureController {
     public static function handle($method, $id, $body, $db) {
         try {
             if ($method === 'GET' && !$id) {
-                // Lister toutes les factures
                 $stmt = $db->query("
                     SELECT f.numfact, f.idcli, f.datefact, f.montant, f.statut,
                            c.nom as client_nom, COUNT(lf.numachat) as nb_achats
@@ -17,7 +16,6 @@ class FactureController {
                 echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
                 
             } elseif ($method === 'GET' && $id) {
-                // Détail d'une facture
                 $stmt = $db->prepare("
                     SELECT f.*, c.nom as client_nom, c.contact as client_contact
                     FROM facture f JOIN client c ON f.idcli = c.idcli
@@ -32,7 +30,6 @@ class FactureController {
                     return;
                 }
                 
-                // Récupérer les lignes
                 $stmt = $db->prepare("
                     SELECT a.numachat, a.qte, v.design, v.prix, (a.qte * v.prix) as total
                     FROM ligne_facture lf
@@ -46,7 +43,6 @@ class FactureController {
                 echo json_encode($facture);
                 
             } elseif ($method === 'POST') {
-                // Créer une facture
                 if (!isset($body['idcli']) || !isset($body['achats'])) {
                     http_response_code(400);
                     echo json_encode(['error' => 'Données invalides']);
@@ -55,12 +51,12 @@ class FactureController {
                 
                 $db->beginTransaction();
                 try {
-                    $stmt = $db->query("SELECT COUNT(*) FROM facture");
-                    $count = $stmt->fetchColumn() + 1;
+                    $stmt = $db->query("SELECT COALESCE(MAX(CAST(SUBSTRING(numfact FROM 13) AS INTEGER)), 0) + 1 FROM facture");
+                    $numfact = 'FAC-' . date('Ymd') . '-' . str_pad($stmt->fetchColumn(), 3, '0', STR_PAD_LEFT);
                     $numfact = 'FAC-' . date('Ymd') . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
                     
-                    $stmt = $db->prepare("INSERT INTO facture (numfact, idcli, datefact, montant, statut) VALUES (?, ?, ?, ?, 'EN_ATTENTE')");
-                    $stmt->execute([$numfact, $body['idcli'], $body['datefact'] ?? date('Y-m-d'), $body['montant'] ?? 0]);
+                    $stmt = $db->prepare("INSERT INTO facture (numfact, idcli, datefact, montant, statut) VALUES (?, ?, ?, ?, ?)");
+                    $stmt->execute([$numfact, $body['idcli'], $body['datefact'] ?? date('Y-m-d'), $body['montant'] ?? 0, $body['statut'] ?? 'EN_ATTENTE']);
                     
                     $stmt = $db->prepare("INSERT INTO ligne_facture (numfact, numachat) VALUES (?, ?)");
                     foreach ($body['achats'] as $numachat) {
@@ -83,8 +79,12 @@ class FactureController {
                     throw $e;
                 }
                 
+            } elseif ($method === 'PUT' && $id) {
+                $stmt = $db->prepare("UPDATE facture SET statut = ? WHERE numfact = ?");
+                $stmt->execute([$body['statut'], $id]);
+                echo json_encode(['message' => 'Statut mis à jour']);
+                
             } elseif ($method === 'DELETE' && $id) {
-                // Supprimer une facture
                 $db->beginTransaction();
                 $stmt = $db->prepare("DELETE FROM ligne_facture WHERE numfact = ?");
                 $stmt->execute([$id]);

@@ -1,30 +1,37 @@
 import React, { useEffect, useState, useMemo } from 'react'
-import { api } from '../services/api'
+import * as api from '../api/index'
 import { 
-  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid
+  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+  BarChart, Bar, Legend, PieChart, Pie, Cell
 } from 'recharts'
 import { 
-  BanknotesIcon, 
-  ShoppingCartIcon, 
-  UserGroupIcon, 
-  ArrowTrendingUpIcon,
-  ArrowTrendingDownIcon,
-  TruckIcon
+  BanknotesIcon, ShoppingCartIcon, UserGroupIcon, TruckIcon,
+  ArrowTrendingUpIcon, ArrowTrendingDownIcon
 } from '@heroicons/react/24/outline'
+import { fmt } from '../utils/format'
 
-const fmt = (n) => Number(n || 0).toLocaleString('fr-MG')
+const COLORS = ['#0f172a', '#334155', '#475569', '#64748b', '#94a3b8', '#cbd5e1']
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload?.length) {
     return (
-      <div className="bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-lg">
-        <p className="text-xs text-slate-500 mb-1">{label}</p>
-        <p className="text-sm font-bold text-slate-700">{fmt(payload[0].value)} Ar</p>
+      <div className="bg-white border border-slate-200 rounded-lg px-3 py-2 shadow-lg text-xs">
+        <p className="text-slate-500 mb-0.5">{label}</p>
+        {payload.map((p, i) => (
+          <p key={i} className="font-bold text-slate-800">{p.name}: {fmt(p.value)} Ar</p>
+        ))}
       </div>
     )
   }
   return null
 }
+
+const EmptyState = ({ message }) => (
+  <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+    <ShoppingCartIcon className="w-10 h-10 mb-2" />
+    <p className="text-sm">{message}</p>
+  </div>
+)
 
 export default function Stats() {
   const [recettes, setRecettes] = useState([])
@@ -33,272 +40,203 @@ export default function Stats() {
   const [achats, setAchats] = useState([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => { loadAllData() }, [])
+  useEffect(() => { loadAll() }, [])
 
-  const loadAllData = async () => {
+  const loadAll = async () => {
     setLoading(true)
     try {
       const [rec, cli, voi, ach] = await Promise.all([
-        api.getRecettes(),
+        api.getRecetteMensuelle(),
         api.getClients(),
         api.getVoitures(),
         api.getAchats()
       ])
-      setRecettes(rec || [])
-      setClients(cli || [])
-      setVoitures(voi || [])
-      setAchats(ach || [])
-    } catch (error) {
-      console.error('Erreur:', error)
-    } finally {
-      setLoading(false)
-    }
+      setRecettes(Array.isArray(rec) ? rec : [])
+      setClients(Array.isArray(cli) ? cli : [])
+      setVoitures(Array.isArray(voi) ? voi : [])
+      setAchats(Array.isArray(ach) ? ach : [])
+    } catch(e) { console.error(e) }
+    finally { setLoading(false) }
   }
 
-  // Conversion des mois anglais en français
-  const moisAnglaisToFrancais = {
-    'January': 'Janvier', 'February': 'Février', 'March': 'Mars',
-    'April': 'Avril', 'May': 'Mai', 'June': 'Juin',
-    'July': 'Juillet', 'August': 'Août', 'September': 'Septembre',
-    'October': 'Octobre', 'November': 'Novembre', 'December': 'Décembre'
-  }
-
-  const recettesMensuelles = useMemo(() => {
-    return recettes.map(r => {
-      let label = r.label.trim().replace(/\s+/g, ' ')
-      
-      Object.entries(moisAnglaisToFrancais).forEach(([en, fr]) => {
-        if (label.toLowerCase().startsWith(en.toLowerCase())) {
-          const annee = label.split(' ').pop()
-          label = `${fr} ${annee}`
-        }
-      })
-      
-      return {
-        ...r,
-        label: label,
-        total: Number(r.total)
-      }
-    })
-  }, [recettes])
-
-  const totalRevenu = useMemo(() => {
-    return recettesMensuelles.reduce((s, r) => s + r.total, 0)
-  }, [recettesMensuelles])
-  
+  // Calculs
+  const totalRevenu = recettes.reduce((s, r) => s + Number(r.total || 0), 0)
   const nombreVentes = achats.length
   const nombreClients = clients.length
-
-  const stockTotal = useMemo(() => {
-    return voitures.reduce((s, v) => s + Number(v.nombre || 0), 0)
-  }, [voitures])
-
-  const totalVendus = useMemo(() => {
-    return achats.reduce((s, a) => s + Number(a.qte || 1), 0)
-  }, [achats])
-
-  const stockDisponible = stockTotal - totalVendus
+  const stockDisponible = voitures.reduce((s, v) => s + Number(v.nombre || 0), 0)
 
   const evolution = useMemo(() => {
-    if (recettesMensuelles.length < 2) return 0
-    const dernier = recettesMensuelles[recettesMensuelles.length - 1]?.total || 0
-    const precedent = recettesMensuelles[recettesMensuelles.length - 2]?.total || 0
+    if (recettes.length < 2) return 0
+    const dernier = recettes[recettes.length - 1]?.total || 0
+    const precedent = recettes[recettes.length - 2]?.total || 0
     return precedent > 0 ? ((dernier - precedent) / precedent) * 100 : 0
-  }, [recettesMensuelles])
+  }, [recettes])
 
+  // Top clients
   const topClients = useMemo(() => {
-    const clientAchats = {}
-    achats.forEach(achat => {
-      const id = achat.idcli
-      const client = clients.find(c => c.idcli === id)
-      const nom = client ? client.nom : `Client ${id}`
-      const voiture = voitures.find(v => v.idvoit === achat.idvoit)
-      const prix = voiture ? Number(voiture.prix) * Number(achat.qte || 1) : 0
-      
-      if (!clientAchats[id]) {
-        clientAchats[id] = { total: 0, count: 0, nom }
-      }
-      clientAchats[id].total += prix
-      clientAchats[id].count += 1
+    const map = {}
+    achats.forEach(a => {
+      const client = clients.find(c => c.idcli === a.idcli)
+      const nom = client?.nom || a.idcli
+      if (!map[a.idcli]) map[a.idcli] = { name: nom, total: 0, count: 0 }
+      map[a.idcli].total += Number(a.total || 0)
+      map[a.idcli].count += 1
     })
-    return Object.values(clientAchats)
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 5)
-  }, [achats, clients, voitures])
+    return Object.values(map).sort((a, b) => b.total - a.total).slice(0, 5)
+  }, [achats, clients])
 
+  // Top voitures
   const topVoitures = useMemo(() => {
-    const voitureVentes = {}
-    achats.forEach(achat => {
-      const id = achat.idvoit
-      const voiture = voitures.find(v => v.idvoit === id)
-      const design = voiture ? voiture.design : `Véhicule ${id}`
-      
-      if (!voitureVentes[id]) {
-        voitureVentes[id] = { count: 0, design, prix: voiture ? Number(voiture.prix) : 0 }
-      }
-      voitureVentes[id].count += Number(achat.qte || 1)
+    const map = {}
+    achats.forEach(a => {
+      const v = voitures.find(v => v.idvoit === a.idvoit)
+      const name = v?.design || a.idvoit
+      if (!map[a.idvoit]) map[a.idvoit] = { name, count: 0, value: 0 }
+      map[a.idvoit].count += Number(a.qte || 1)
+      map[a.idvoit].value += Number(a.total || 0)
     })
-    return Object.values(voitureVentes)
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5)
+    return Object.values(map).sort((a, b) => b.count - a.count).slice(0, 6)
   }, [achats, voitures])
+
+  // Achats par mois (pour le bar chart)
+  const achatsParMois = useMemo(() => {
+    const map = {}
+    achats.forEach(a => {
+      const date = new Date(a.date)
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+      if (!map[key]) map[key] = { month: key, count: 0, total: 0 }
+      map[key].count += 1
+      map[key].total += Number(a.total || 0)
+    })
+    return Object.values(map).sort((a, b) => a.month.localeCompare(b.month)).slice(-6)
+  }, [achats])
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="w-6 h-6 border-2 border-slate-200 border-t-slate-600 rounded-full animate-spin"></div>
+        <div className="w-6 h-6 border-2 border-slate-200 border-t-slate-600 rounded-full animate-spin" />
       </div>
     )
   }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-slate-800">Tableau de bord</h1>
+      <h1 className="text-xl font-bold text-slate-900">Tableau de bord</h1>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <div className="flex items-center justify-between mb-2">
-            <BanknotesIcon className="w-4 h-4 text-slate-400" />
+          <div className="flex justify-between items-start mb-2">
+            <BanknotesIcon className="w-5 h-5 text-slate-400" />
             {evolution !== 0 && (
-              <span className={`text-xs flex items-center gap-0.5 ${evolution > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+              <span className={`text-xs font-medium flex items-center gap-0.5 ${evolution > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                 {evolution > 0 ? <ArrowTrendingUpIcon className="w-3 h-3" /> : <ArrowTrendingDownIcon className="w-3 h-3" />}
                 {Math.abs(evolution).toFixed(0)}%
               </span>
             )}
           </div>
-          <p className="text-lg font-bold text-slate-800">{fmt(totalRevenu)} Ar</p>
-          <p className="text-xs text-slate-500">Revenu total</p>
+          <p className="text-xl font-bold text-slate-900">{fmt(totalRevenu)} Ar</p>
+          <p className="text-xs text-slate-500 mt-0.5">Revenu total</p>
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <ShoppingCartIcon className="w-4 h-4 text-slate-400 mb-2" />
-          <p className="text-lg font-bold text-slate-800">{nombreVentes}</p>
-          <p className="text-xs text-slate-500">Ventes</p>
+          <ShoppingCartIcon className="w-5 h-5 text-slate-400 mb-2" />
+          <p className="text-xl font-bold text-slate-900">{nombreVentes}</p>
+          <p className="text-xs text-slate-500 mt-0.5">Ventes réalisées</p>
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <UserGroupIcon className="w-4 h-4 text-slate-400 mb-2" />
-          <p className="text-lg font-bold text-slate-800">{nombreClients}</p>
-          <p className="text-xs text-slate-500">Clients</p>
+          <UserGroupIcon className="w-5 h-5 text-slate-400 mb-2" />
+          <p className="text-xl font-bold text-slate-900">{nombreClients}</p>
+          <p className="text-xs text-slate-500 mt-0.5">Clients enregistrés</p>
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <TruckIcon className="w-4 h-4 text-slate-400 mb-2" />
-          <p className="text-lg font-bold text-slate-800">{stockDisponible}</p>
-          <p className="text-xs text-slate-500">En stock</p>
+          <TruckIcon className="w-5 h-5 text-slate-400 mb-2" />
+          <p className="text-xl font-bold text-slate-900">{stockDisponible}</p>
+          <p className="text-xs text-slate-500 mt-0.5">Véhicules en stock</p>
         </div>
       </div>
 
       {/* Graphique des recettes */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5">
-        <h2 className="text-sm font-medium text-slate-600 mb-4">Évolution des recettes</h2>
-        {recettesMensuelles.length > 0 ? (
-          <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={recettesMensuelles} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
+      <div className="bg-white rounded-xl border border-slate-200 p-6">
+        <h2 className="text-sm font-semibold text-slate-700 mb-4">Évolution des recettes</h2>
+        {recettes.length > 0 ? (
+          <ResponsiveContainer width="100%" height={250}>
+            <AreaChart data={recettes} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
               <defs>
-                <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#94a3b8" stopOpacity={0.25}/>
-                  <stop offset="95%" stopColor="#94a3b8" stopOpacity={0.02}/>
+                <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#0f172a" stopOpacity={0.15} />
+                  <stop offset="95%" stopColor="#0f172a" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f8fafc" />
-              <XAxis 
-                dataKey="label" 
-                tick={{ fontSize: 11, fill: '#94a3b8' }} 
-                tickLine={false} 
-                axisLine={false}
-                dy={8}
-              />
-              <YAxis 
-                tick={{ fontSize: 11, fill: '#94a3b8' }} 
-                tickFormatter={v => (v/1000000)+'M'} 
-                tickLine={false} 
-                axisLine={false}
-                dx={-4}
-              />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} axisLine={false} dy={8} />
+              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} tickFormatter={v => (v/1e6).toFixed(1)+'M'} tickLine={false} axisLine={false} dx={-4} />
               <Tooltip content={<CustomTooltip />} />
-              <Area 
-                type="monotone" 
-                dataKey="total" 
-                stroke="#64748b" 
-                strokeWidth={2}
-                fill="url(#colorRevenue)"
-                dot={{ r: 3, fill: '#64748b', strokeWidth: 2, stroke: '#fff' }}
-                activeDot={{ r: 5, fill: '#475569', strokeWidth: 2, stroke: '#fff' }}
-              />
+              <Area type="monotone" dataKey="total" stroke="#0f172a" strokeWidth={2} fill="url(#rev)"
+                dot={{ r: 4, fill: '#0f172a', strokeWidth: 2, stroke: '#fff' }}
+                activeDot={{ r: 6, fill: '#0f172a', strokeWidth: 2, stroke: '#fff' }} />
             </AreaChart>
           </ResponsiveContainer>
-        ) : (
-          <p className="text-center text-sm text-slate-400 py-16">Aucune donnée</p>
-        )}
+        ) : <EmptyState message="Aucune recette enregistrée" />}
       </div>
 
-      {/* Top clients + Top voitures */}
+      {/* Achats par mois + Répartition */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Top 5 clients */}
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <h2 className="text-sm font-medium text-slate-600 mb-3">Top clients</h2>
-          {topClients.length > 0 ? (
-            <div className="space-y-1">
-              {topClients.map((client, i) => (
-                <div key={i} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-slate-50 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <span className={`text-xs font-semibold w-5 h-5 rounded-full flex items-center justify-center ${
-                      i === 0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'
-                    }`}>
-                      {i + 1}
-                    </span>
-                    <div>
-                      <p className="text-sm font-medium text-slate-700">{client.nom}</p>
-                      <p className="text-xs text-slate-400">{client.count} achat(s)</p>
-                    </div>
-                  </div>
-                  <p className="text-sm font-semibold text-slate-600">{fmt(client.total)} Ar</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-center text-sm text-slate-400 py-8">Aucune vente</p>
-          )}
+        {/* Bar chart achats par mois */}
+        <div className="bg-white rounded-xl border border-slate-200 p-6">
+          <h2 className="text-sm font-semibold text-slate-700 mb-4">Achats par mois</h2>
+          {achatsParMois.length > 0 ? (
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={achatsParMois} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} axisLine={false} allowDecimals={false} />
+                <Tooltip content={<CustomTooltip />} />
+                <Bar dataKey="count" name="Achats" fill="#0f172a" radius={[4, 4, 0, 0]} maxBarSize={40} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : <EmptyState message="Aucun achat ce mois" />}
         </div>
 
-        {/* Top 5 voitures */}
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <h2 className="text-sm font-medium text-slate-600 mb-3">Véhicules les plus vendus</h2>
+        {/* Pie chart répartition */}
+        <div className="bg-white rounded-xl border border-slate-200 p-6">
+          <h2 className="text-sm font-semibold text-slate-700 mb-4">Répartition par véhicule</h2>
           {topVoitures.length > 0 ? (
-            <div className="space-y-3">
-              {topVoitures.map((voiture, i) => (
-                <div key={i} className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className={`text-xs font-semibold w-5 h-5 rounded-full flex items-center justify-center ${
-                        i === 0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'
-                      }`}>
-                        {i + 1}
-                      </span>
-                      <div>
-                        <p className="text-sm font-medium text-slate-700">{voiture.design}</p>
-                        <p className="text-xs text-slate-400">{fmt(voiture.prix)} Ar</p>
-                      </div>
-                    </div>
-                    <p className="text-sm font-semibold text-slate-600">{voiture.count} vente(s)</p>
-                  </div>
-                  <div className="w-full bg-slate-100 rounded-full h-1.5 ml-8">
-                    <div 
-                      className="bg-slate-400 h-1.5 rounded-full transition-all"
-                      style={{ 
-                        width: `${(voiture.count / topVoitures[0].count) * 100}%` 
-                      }}
-                    />
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie data={topVoitures} dataKey="count" nameKey="name" cx="50%" cy="50%" outerRadius={80} innerRadius={45}
+                  paddingAngle={2}>
+                  {topVoitures.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                </Pie>
+                <Tooltip content={<CustomTooltip />} />
+                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '11px', color: '#64748b' }} />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : <EmptyState message="Aucune vente" />}
+        </div>
+      </div>
+
+      {/* Top clients */}
+      <div className="bg-white rounded-xl border border-slate-200 p-6">
+        <h2 className="text-sm font-semibold text-slate-700 mb-4">Meilleurs clients</h2>
+        {topClients.length > 0 ? (
+          <div className="space-y-1">
+            {topClients.map((c, i) => (
+              <div key={i} className="flex items-center justify-between py-2.5 px-3 rounded-lg hover:bg-slate-50 transition-colors">
+                <div className="flex items-center gap-3">
+                  <span className={`text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center ${i === 0 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'}`}>{i + 1}</span>
+                  <div>
+                    <p className="text-sm font-medium text-slate-800">{c.name}</p>
+                    <p className="text-xs text-slate-400">{c.count} achat(s)</p>
                   </div>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-center text-sm text-slate-400 py-8">Aucune vente</p>
-          )}
-        </div>
+                <p className="text-sm font-semibold text-slate-700">{fmt(c.total)} Ar</p>
+              </div>
+            ))}
+          </div>
+        ) : <EmptyState message="Aucune vente enregistrée" />}
       </div>
     </div>
   )

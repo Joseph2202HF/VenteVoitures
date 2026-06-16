@@ -24,9 +24,23 @@ class ClientController {
                 echo json_encode($s->fetch());
                 break;
             case 'DELETE':
-                $s = $db->prepare("DELETE FROM client WHERE idcli=?");
-                $s->execute([$id]);
-                echo json_encode(['success' => true]);
+                $db->beginTransaction();
+                try {
+                    // 1. Supprimer les lignes de facture liées aux achats du client
+                    $db->prepare("DELETE FROM ligne_facture WHERE numachat IN (SELECT numachat FROM achat WHERE idcli = ?)")->execute([$id]);
+                    // 2. Supprimer les factures du client
+                    $db->prepare("DELETE FROM facture WHERE idcli = ?")->execute([$id]);
+                    // 3. Supprimer les achats du client
+                    $db->prepare("DELETE FROM achat WHERE idcli = ?")->execute([$id]);
+                    // 4. Supprimer le client
+                    $db->prepare("DELETE FROM client WHERE idcli = ?")->execute([$id]);
+                    $db->commit();
+                    echo json_encode(['success' => true]);
+                } catch (Exception $e) {
+                    $db->rollBack();
+                    http_response_code(500);
+                    echo json_encode(['error' => $e->getMessage()]);
+                }
                 break;
         }
     }

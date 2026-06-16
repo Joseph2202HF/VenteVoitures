@@ -1,552 +1,239 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react'
-import { api } from '../services/api'
+import React, { useEffect, useState, useCallback } from 'react'
+import * as api from '../api/index'
 import Toast from '../components/Toast'
+import ConfirmModal from '../components/ConfirmModal'
 import { 
-  PencilIcon, 
-  TrashIcon, 
-  MagnifyingGlassIcon,
-  XMarkIcon,
-  PlusIcon,
-  ChevronUpDownIcon,
-  TruckIcon,
-  CurrencyDollarIcon,
-  CubeIcon,
-  ExclamationTriangleIcon
+  PencilIcon, TrashIcon, MagnifyingGlassIcon, XMarkIcon, PlusIcon,
+  ChevronUpDownIcon, ExclamationTriangleIcon, CheckCircleIcon
 } from '@heroicons/react/24/outline'
+import { fmt } from '../utils/format'
 
 const EMPTY = { idvoit: '', design: '', prix: '', nombre: '' }
-const fmt = (n) => Number(n).toLocaleString('fr-MG') + ' Ar'
+
+const rules = {
+  idvoit: (v) => !v.trim() ? 'L\'identifiant du véhicule est obligatoire.' : v.trim().length < 3 ? 'L\'identifiant doit contenir au moins 3 caractères.' : null,
+  design: (v) => !v.trim() ? 'La désignation du véhicule est obligatoire.' : v.trim().length < 2 ? 'La désignation est trop courte.' : null,
+  prix: (v) => !v || isNaN(v) || Number(v) <= 0 ? 'Veuillez saisir un prix valide supérieur à 0 Ar.' : null,
+  nombre: (v) => v === '' || isNaN(v) || Number(v) < 0 ? 'Veuillez saisir un stock valide (0 ou plus).' : null
+}
 
 export default function Voitures() {
   const [voitures, setVoitures] = useState([])
-  const [filteredVoitures, setFilteredVoitures] = useState([])
+  const [filtered, setFiltered] = useState([])
   const [form, setForm] = useState(EMPTY)
+  const [touched, setTouched] = useState({})
   const [editing, setEditing] = useState(null)
   const [showModal, setShowModal] = useState(false)
-  const [searchTerm, setSearchTerm] = useState('')
+  const [search, setSearch] = useState('')
   const [toast, setToast] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [sortConfig, setSortConfig] = useState({ key: 'idvoit', direction: 'asc' })
+  const [sort, setSort] = useState({ key: 'idvoit', asc: true })
   const [deleteConfirm, setDeleteConfirm] = useState(null)
-  const searchTimeoutRef = useRef(null)
 
-  const load = useCallback(async (query = '') => {
+  const load = useCallback(async () => {
     setLoading(true)
-    try {
-      const data = await api.getVoitures(query)
-      setVoitures(data)
-      setFilteredVoitures(data)
-    } catch (error) {
-      showToast('Erreur lors du chargement', 'error')
-    } finally {
-      setLoading(false)
-    }
+    try { const data = await api.getVoitures(); setVoitures(data); setFiltered(data) }
+    catch(e) { showToast('Erreur lors du chargement des véhicules.', 'error') }
+    finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { load('') }, [load])
+  useEffect(() => { load() }, [load])
 
-  // Filtrage local quand search change
   useEffect(() => {
-    if (!searchTerm.trim()) {
-      setFilteredVoitures(voitures)
-      return
-    }
-    const filtered = voitures.filter(v =>
-      v.idvoit?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      v.design?.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-    setFilteredVoitures(filtered)
-  }, [searchTerm, voitures])
+    if (!search.trim()) { setFiltered(voitures); return }
+    const s = search.toLowerCase()
+    setFiltered(voitures.filter(v => v.idvoit?.toLowerCase().includes(s) || v.design?.toLowerCase().includes(s)))
+  }, [search, voitures])
 
-  // Tri des données
-  const sortedVoitures = [...filteredVoitures].sort((a, b) => {
-    let aVal = a[sortConfig.key]
-    let bVal = b[sortConfig.key]
-    
-    // Tri spécial pour le prix (numérique)
-    if (sortConfig.key === 'prix') {
-      aVal = Number(aVal) || 0
-      bVal = Number(bVal) || 0
-    }
-    
-    if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1
-    if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1
-    return 0
+  const sorted = [...filtered].sort((a, b) => {
+    let va = a[sort.key], vb = b[sort.key]
+    if (sort.key === 'prix' || sort.key === 'nombre') { va = Number(va)||0; vb = Number(vb)||0 }
+    return (va < vb ? -1 : 1) * (sort.asc ? 1 : -1)
   })
 
-  const showToast = (message, type) => {
-    setToast({ message, type })
+  const showToast = (msg, type = 'success') => {
+    setToast({ message: msg, type })
     setTimeout(() => setToast(null), 3000)
   }
 
-  const handleSearch = (e) => {
-    const value = e.target.value
-    setSearchTerm(value)
-    
-    // Debounce pour la recherche API
-    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
-    searchTimeoutRef.current = setTimeout(() => load(value), 400)
-  }
+  const toggleSort = (key) => setSort({ key, asc: sort.key === key ? !sort.asc : true })
 
-  const openCreate = () => {
-    setForm(EMPTY)
-    setEditing(null)
-    setShowModal(true)
-  }
+  const errors = {}
+  Object.keys(rules).forEach(key => {
+    if (key === 'idvoit' && editing) return
+    const err = rules[key](form[key])
+    if (err) errors[key] = err
+  })
 
-  const openEdit = (v) => {
-    setForm(v)
-    setEditing(v.idvoit)
-    setShowModal(true)
-  }
+  const isValid = Object.keys(errors).length === 0
+
+  const openCreate = () => { setForm(EMPTY); setEditing(null); setTouched({}); setShowModal(true) }
+  const openEdit = (v) => { setForm({...v, prix: String(v.prix), nombre: String(v.nombre)}); setEditing(v.idvoit); setTouched({}); setShowModal(true) }
 
   const handleSubmit = async () => {
-    // Validation
-    if (!form.design?.trim()) {
-      showToast('La désignation est requise', 'error')
-      return
-    }
-    
-    const prix = parseInt(form.prix)
-    const nombre = parseInt(form.nombre)
-    
-    if (isNaN(prix) || prix <= 0) {
-      showToast('Le prix doit être un nombre valide', 'error')
-      return
-    }
-    
-    if (isNaN(nombre) || nombre < 0) {
-      showToast('Le stock doit être un nombre valide', 'error')
-      return
-    }
-
+    setTouched({ idvoit: true, design: true, prix: true, nombre: true })
+    if (!isValid) return
     setLoading(true)
     try {
-      const d = { design: form.design, prix, nombre }
-      
-      if (editing) {
-        await api.updateVoiture(editing, d)
-        showToast('Voiture modifiée avec succès', 'success')
-      } else {
-        if (!form.idvoit?.trim()) {
-          showToast("L'ID voiture est requis", 'error')
-          setLoading(false)
-          return
-        }
-        await api.createVoiture({ idvoit: form.idvoit.toUpperCase(), ...d })
-        showToast('Voiture ajoutée avec succès', 'success')
-      }
+      const d = { design: form.design, prix: parseInt(form.prix), nombre: parseInt(form.nombre) }
+      if (editing) { await api.updateVoiture(editing, d); showToast('Le véhicule a été modifié avec succès.') }
+      else { await api.createVoiture({ idvoit: form.idvoit.toUpperCase(), ...d }); showToast('Le véhicule a été créé avec succès.') }
       setShowModal(false)
-      load(searchTerm)
-    } catch(error) {
-      showToast(error.message, 'error')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleDelete = (id, design) => {
-    setDeleteConfirm({ id, design })
+      load()
+    } catch(e) { showToast(e.message, 'error') }
+    finally { setLoading(false) }
   }
 
   const confirmDelete = async () => {
     if (!deleteConfirm) return
-    setLoading(true)
-    try {
-      await api.deleteVoiture(deleteConfirm.id)
-      load(searchTerm)
-      showToast('Voiture supprimée', 'success')
-      setDeleteConfirm(null)
-    } catch(error) {
-      showToast(error.message, 'error')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const requestSort = (key) => {
-    setSortConfig({
-      key,
-      direction: sortConfig.key === key && sortConfig.direction === 'asc' ? 'desc' : 'asc'
-    })
+    try { await api.deleteVoiture(deleteConfirm.id); load(); showToast('Le véhicule a été supprimé.') }
+    catch(e) { showToast(e.message, 'error') }
+    finally { setDeleteConfirm(null) }
   }
 
   const cols = [
-    { key: 'idvoit', label: 'ID Voiture', sortable: true },
-    { key: 'design', label: 'Désignation', sortable: true },
-    { key: 'prix', label: 'Prix', sortable: true },
-    { key: 'nombre', label: 'Stock', sortable: true },
+    { key: 'idvoit', label: 'Identifiant' },
+    { key: 'design', label: 'Désignation' },
+    { key: 'prix', label: 'Prix' },
+    { key: 'nombre', label: 'Stock' }
   ]
 
-  // Statistiques
-  const totalVoitures = voitures.length
-  const valeurStock = voitures.reduce((sum, v) => sum + (Number(v.prix) * Number(v.nombre)), 0)
-  const stockFaible = voitures.filter(v => Number(v.nombre) <= 2).length
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100/50">
-      <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-10 py-6 sm:py-8">
-        
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-slate-800">Voitures</h1>
-              <p className="text-slate-500 text-sm mt-1">
-                {filteredVoitures.length} véhicule{filteredVoitures.length > 1 ? 's' : ''} au total
-              </p>
-            </div>
-            
-            <button
-              onClick={openCreate}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-medium transition-all shadow-sm hover:shadow-md"
-            >
-              <PlusIcon className="w-4 h-4" />
-              Nouvelle voiture
-            </button>
-          </div>
+    <div className="min-h-screen bg-slate-50 p-6">
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Véhicules</h1>
+          <p className="text-sm text-slate-500">{voitures.length} véhicule{voitures.length > 1 ? 's' : ''} enregistré{voitures.length > 1 ? 's' : ''}</p>
         </div>
-
-        {/* Mini stats inline */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
-          <div className="bg-white rounded-lg px-4 py-3 border border-slate-100 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-slate-400">Total véhicules</p>
-                <p className="text-xl font-bold text-slate-700">{totalVoitures}</p>
-              </div>
-              <TruckIcon className="w-5 h-5 text-slate-400" />
-            </div>
-          </div>
-          <div className="bg-white rounded-lg px-4 py-3 border border-slate-100 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-slate-400">Valeur du stock</p>
-                <p className="text-sm font-bold text-slate-700 truncate">{fmt(valeurStock)}</p>
-              </div>
-              <CurrencyDollarIcon className="w-5 h-5 text-slate-400" />
-            </div>
-          </div>
-          <div className="bg-white rounded-lg px-4 py-3 border border-slate-100 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-slate-400">Stock faible</p>
-                <p className={`text-xl font-bold ${stockFaible > 0 ? 'text-amber-600' : 'text-slate-700'}`}>
-                  {stockFaible}
-                </p>
-              </div>
-              <CubeIcon className="w-5 h-5 text-slate-400" />
-            </div>
-          </div>
-        </div>
-
-        {/* Barre de recherche */}
-        <div className="mb-6">
-          <div className="relative max-w-md">
-            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Rechercher par ID ou désignation..."
-              value={searchTerm}
-              onChange={handleSearch}
-              className="w-full pl-9 pr-9 py-2 bg-white border border-slate-200 rounded-lg focus:border-slate-300 focus:ring-1 focus:ring-slate-200 outline-none transition-all text-sm"
-            />
-            {searchTerm && (
-              <button
-                onClick={() => {
-                  setSearchTerm('')
-                  load('')
-                }}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-              >
-                <XMarkIcon className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Tableau */}
-        <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-          {loading && filteredVoitures.length === 0 ? (
-            <div className="flex justify-center py-12">
-              <div className="w-6 h-6 border-2 border-slate-200 border-t-slate-600 rounded-full animate-spin"></div>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-slate-50 border-b border-slate-200">
-                  <tr>
-                    {cols.map((col) => (
-                      <th
-                        key={col.key}
-                        onClick={() => col.sortable && requestSort(col.key)}
-                        className={`px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider ${
-                          col.sortable ? 'cursor-pointer hover:text-slate-700 select-none' : ''
-                        }`}
-                      >
-                        <div className="flex items-center gap-1">
-                          {col.label}
-                          {col.sortable && <ChevronUpDownIcon className="w-3.5 h-3.5" />}
-                        </div>
-                      </th>
-                    ))}
-                    <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {sortedVoitures.length === 0 ? (
-                    <tr>
-                      <td colSpan={cols.length + 1} className="px-4 py-12 text-center">
-                        <div className="flex flex-col items-center gap-2">
-                          <TruckIcon className="w-10 h-10 text-slate-300" />
-                          <p className="text-slate-400 text-sm">
-                            {searchTerm ? 'Aucun résultat' : 'Aucune voiture enregistrée'}
-                          </p>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    sortedVoitures.map((voiture) => {
-                      const stockFaibleItem = Number(voiture.nombre) <= 2
-                      return (
-                        <tr key={voiture.idvoit} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="px-4 py-3">
-                            <span className="font-mono text-sm font-medium text-slate-700">
-                              {voiture.idvoit}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className="text-sm text-slate-800">{voiture.design}</span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className="text-sm font-medium text-slate-700">{fmt(voiture.prix)}</span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-1.5">
-                              <span className={`text-sm font-medium ${stockFaibleItem ? 'text-amber-600' : 'text-slate-700'}`}>
-                                {voiture.nombre}
-                              </span>
-                              {stockFaibleItem && (
-                                <ExclamationTriangleIcon className="w-3.5 h-3.5 text-amber-500" title="Stock faible" />
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <button
-                                onClick={() => openEdit(voiture)}
-                                className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-all"
-                                title="Modifier"
-                              >
-                                <PencilIcon className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => handleDelete(voiture.idvoit, voiture.design)}
-                                className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded transition-all"
-                                title="Supprimer"
-                              >
-                                <TrashIcon className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* MODAL */}
-        {showModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={() => setShowModal(false)}>
-            <div 
-              className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-800">
-                    {editing ? 'Modifier la voiture' : 'Ajouter une voiture'}
-                  </h2>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    {editing ? 'Modifiez les informations' : 'Renseignez les caractéristiques'}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setShowModal(false)}
-                  className="w-7 h-7 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors"
-                >
-                  <XMarkIcon className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="px-6 py-6 space-y-5">
-                {!editing && (
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                      ID Voiture <span className="text-red-400">*</span>
-                    </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                        <span className="text-slate-400 text-sm font-mono">#</span>
-                      </div>
-                      <input
-                        type="text"
-                        value={form.idvoit}
-                        onChange={(e) => setForm({...form, idvoit: e.target.value.toUpperCase()})}
-                        className="w-full pl-7 pr-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:border-slate-300 focus:ring-1 focus:ring-slate-200 outline-none transition-all"
-                        placeholder="V001"
-                        autoFocus
-                      />
-                    </div>
-                    <p className="text-xs text-slate-400 mt-1.5">Identifiant unique pour ce véhicule</p>
-                  </div>
-                )}
-                
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                    Désignation <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={form.design}
-                    onChange={(e) => setForm({...form, design: e.target.value})}
-                    className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:border-slate-300 focus:ring-1 focus:ring-slate-200 outline-none transition-all"
-                    placeholder="MITSUBISHI PAJERO"
-                  />
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                      Prix (Ar) <span className="text-red-400">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      value={form.prix}
-                      onChange={(e) => setForm({...form, prix: e.target.value})}
-                      className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:border-slate-300 focus:ring-1 focus:ring-slate-200 outline-none transition-all"
-                      placeholder="25000000"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                      Stock <span className="text-red-400">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      value={form.nombre}
-                      onChange={(e) => setForm({...form, nombre: e.target.value})}
-                      className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:border-slate-300 focus:ring-1 focus:ring-slate-200 outline-none transition-all"
-                      placeholder="5"
-                    />
-                  </div>
-                </div>
-                
-                <div className="bg-amber-50 rounded-lg p-3">
-                  <p className="text-xs text-amber-700">
-                    💡 Le prix sera affiché au format {fmt(25000000)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex gap-3 px-6 py-5 bg-slate-50 border-t border-slate-100">
-                <button
-                  onClick={() => setShowModal(false)}
-                  className="flex-1 px-3 py-2.5 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all"
-                >
-                  Annuler
-                </button>
-                <button
-                  onClick={handleSubmit}
-                  disabled={loading}
-                  className="flex-1 px-3 py-2.5 text-sm font-medium text-white bg-slate-800 rounded-lg hover:bg-slate-700 disabled:opacity-50 transition-all"
-                >
-                  {loading ? (
-                    <div className="flex items-center justify-center gap-2">
-                      <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                      <span>{editing ? 'Enregistrement...' : 'Création...'}</span>
-                    </div>
-                  ) : (
-                    editing ? 'Enregistrer' : 'Créer'
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Modal confirmation suppression */}
-        {deleteConfirm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={() => setDeleteConfirm(null)}>
-            <div 
-              className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="px-6 py-5 text-center">
-                <div className="w-12 h-12 mx-auto mb-4 flex items-center justify-center bg-red-50 rounded-full">
-                  <TrashIcon className="w-6 h-6 text-red-500" />
-                </div>
-                <h3 className="text-lg font-semibold text-slate-800 mb-1">Confirmer la suppression</h3>
-                <p className="text-sm text-slate-500">
-                  Supprimer <span className="font-medium text-slate-700">"{deleteConfirm.design}"</span> ?
-                </p>
-                <p className="text-xs text-slate-400 mt-2">Cette action est irréversible.</p>
-              </div>
-              <div className="flex gap-3 px-6 py-4 bg-slate-50 border-t border-slate-100">
-                <button
-                  onClick={() => setDeleteConfirm(null)}
-                  className="flex-1 px-3 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all"
-                >
-                  Annuler
-                </button>
-                <button
-                  onClick={confirmDelete}
-                  className="flex-1 px-3 py-2 text-sm font-medium text-white bg-red-500 rounded-lg hover:bg-red-600 transition-all"
-                >
-                  Supprimer
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Toast */}
-        {toast && (
-          <div className="fixed bottom-4 right-4 z-50 animate-in slide-in-from-right">
-            <div className={`flex items-center gap-2 px-4 py-2.5 bg-white rounded-lg shadow-lg border-l-4 ${
-              toast.type === 'success' ? 'border-green-500' : 'border-red-500'
-            }`}>
-              <span className="text-sm">{toast.message}</span>
-            </div>
-          </div>
-        )}
+        <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors">
+          <PlusIcon className="w-4 h-4" /> Nouveau véhicule
+        </button>
       </div>
 
-      <style>{`
-        .animate-in {
-          animation-duration: 200ms;
-          animation-fill-mode: both;
-        }
-        .slide-in-from-right {
-          animation-name: slide-in-from-right;
-        }
-        @keyframes slide-in-from-right {
-          from {
-            transform: translateX(100%);
-            opacity: 0;
-          }
-          to {
-            transform: translateX(0);
-            opacity: 1;
-          }
-        }
-      `}</style>
+      <div className="bg-white rounded-xl border border-slate-200 p-3 mb-4">
+        <div className="relative max-w-md">
+          <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input type="text" placeholder="Rechercher par identifiant ou désignation..." value={search} onChange={e => setSearch(e.target.value)}
+            className="w-full pl-9 pr-8 py-2 border border-slate-200 rounded-lg text-sm focus:border-slate-300 focus:ring-1 focus:ring-slate-200 outline-none" />
+          {search && <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><XMarkIcon className="w-4 h-4" /></button>}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-slate-50 border-b border-slate-200">
+              {cols.map(c => (
+                <th key={c.key} onClick={() => toggleSort(c.key)} className={`px-5 py-3 font-semibold text-slate-600 cursor-pointer hover:text-slate-900 select-none ${c.key === 'prix' || c.key === 'nombre' ? 'text-right' : 'text-left'}`}>
+                  <span className="inline-flex items-center gap-1">{c.label} {sort.key === c.key && <span className="text-xs">{sort.asc ? '↑' : '↓'}</span>}</span>
+                </th>
+              ))}
+              <th className="px-5 py-3 text-right font-semibold text-slate-600">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && filtered.length === 0 ? (
+              <tr><td colSpan={5} className="px-5 py-16 text-center text-slate-400">Chargement des véhicules...</td></tr>
+            ) : sorted.length === 0 ? (
+              <tr><td colSpan={5} className="px-5 py-16 text-center text-slate-400">{search ? 'Aucun véhicule ne correspond à cette recherche.' : 'Aucun véhicule enregistré.'}</td></tr>
+            ) : sorted.map(v => (
+              <tr key={v.idvoit} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                <td className="px-5 py-3 font-mono font-medium text-slate-700">{v.idvoit}</td>
+                <td className="px-5 py-3 text-slate-800">{v.design}</td>
+                <td className="px-5 py-3 text-right font-medium text-slate-700">{fmt(v.prix)}</td>
+                <td className="px-5 py-3 text-right">
+                  <span className={Number(v.nombre) <= 2 ? 'text-amber-600 font-semibold' : 'text-slate-700'}>{v.nombre}</span>
+                  {Number(v.nombre) <= 2 && <ExclamationTriangleIcon className="w-3.5 h-3.5 text-amber-500 inline ml-1" />}
+                </td>
+                <td className="px-5 py-3 text-right">
+                  <div className="flex justify-end gap-1">
+                    <button onClick={() => openEdit(v)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Modifier ce véhicule"><PencilIcon className="w-4 h-4" /></button>
+                    <button onClick={() => setDeleteConfirm({ id: v.idvoit, design: v.design })} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Supprimer ce véhicule"><TrashIcon className="w-4 h-4" /></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowModal(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">{editing ? 'Modifier le véhicule' : 'Nouveau véhicule'}</h2>
+                <p className="text-xs text-slate-500 mt-0.5">{editing ? 'Modifiez les caractéristiques du véhicule.' : 'Renseignez les informations du véhicule à ajouter.'}</p>
+              </div>
+              <button onClick={() => setShowModal(false)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"><XMarkIcon className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-5">
+              {!editing && (
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">Identifiant du véhicule</label>
+                  <input type="text" value={form.idvoit} 
+                    onChange={e => { setForm({...form, idvoit: e.target.value.toUpperCase()}); setTouched({...touched, idvoit: true}) }}
+                    onBlur={() => setTouched({...touched, idvoit: true})}
+                    className={`w-full px-3 py-2.5 border rounded-lg text-sm font-mono focus:ring-1 outline-none transition-colors ${touched.idvoit && errors.idvoit ? 'border-red-300 focus:border-red-400 focus:ring-red-100' : 'border-slate-200 focus:border-slate-400 focus:ring-slate-200'}`} 
+                    placeholder="Ex: V004" />
+                  {touched.idvoit && errors.idvoit && <p className="text-xs text-red-500 mt-1.5 flex items-center gap-1"><ExclamationTriangleIcon className="w-3.5 h-3.5" />{errors.idvoit}</p>}
+                  {touched.idvoit && !errors.idvoit && form.idvoit && <p className="text-xs text-emerald-600 mt-1.5 flex items-center gap-1"><CheckCircleIcon className="w-3.5 h-3.5" />Identifiant valide.</p>}
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Désignation</label>
+                <input type="text" value={form.design} 
+                  onChange={e => { setForm({...form, design: e.target.value}); setTouched({...touched, design: true}) }}
+                  onBlur={() => setTouched({...touched, design: true})}
+                  className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:ring-1 outline-none transition-colors ${touched.design && errors.design ? 'border-red-300 focus:border-red-400 focus:ring-red-100' : 'border-slate-200 focus:border-slate-400 focus:ring-slate-200'}`} 
+                  placeholder="Ex: TOYOTA HILUX" />
+                {touched.design && errors.design && <p className="text-xs text-red-500 mt-1.5 flex items-center gap-1"><ExclamationTriangleIcon className="w-3.5 h-3.5" />{errors.design}</p>}
+                {touched.design && !errors.design && form.design && <p className="text-xs text-emerald-600 mt-1.5 flex items-center gap-1"><CheckCircleIcon className="w-3.5 h-3.5" />Désignation valide.</p>}
+              </div>
+              <div className="grid grid-cols-2 gap-5">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">Prix unitaire (Ar)</label>
+                  <input type="number" value={form.prix} 
+                    onChange={e => { setForm({...form, prix: e.target.value}); setTouched({...touched, prix: true}) }}
+                    onBlur={() => setTouched({...touched, prix: true})}
+                    className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:ring-1 outline-none transition-colors ${touched.prix && errors.prix ? 'border-red-300 focus:border-red-400 focus:ring-red-100' : 'border-slate-200 focus:border-slate-400 focus:ring-slate-200'}`} 
+                    placeholder="25000000" />
+                  {touched.prix && errors.prix && <p className="text-xs text-red-500 mt-1.5 flex items-center gap-1"><ExclamationTriangleIcon className="w-3.5 h-3.5" />{errors.prix}</p>}
+                  {touched.prix && !errors.prix && form.prix && <p className="text-xs text-emerald-600 mt-1.5 flex items-center gap-1"><CheckCircleIcon className="w-3.5 h-3.5" />Prix valide.</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">Quantité en stock</label>
+                  <input type="number" value={form.nombre} 
+                    onChange={e => { setForm({...form, nombre: e.target.value}); setTouched({...touched, nombre: true}) }}
+                    onBlur={() => setTouched({...touched, nombre: true})}
+                    className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:ring-1 outline-none transition-colors ${touched.nombre && errors.nombre ? 'border-red-300 focus:border-red-400 focus:ring-red-100' : 'border-slate-200 focus:border-slate-400 focus:ring-slate-200'}`} 
+                    placeholder="5" />
+                  {touched.nombre && errors.nombre && <p className="text-xs text-red-500 mt-1.5 flex items-center gap-1"><ExclamationTriangleIcon className="w-3.5 h-3.5" />{errors.nombre}</p>}
+                  {touched.nombre && !errors.nombre && form.nombre !== '' && <p className="text-xs text-emerald-600 mt-1.5 flex items-center gap-1"><CheckCircleIcon className="w-3.5 h-3.5" />Stock valide.</p>}
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl">
+              <button onClick={() => setShowModal(false)} className="px-5 py-2.5 border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-white transition-colors">Annuler</button>
+              <button onClick={handleSubmit} disabled={loading} className="px-5 py-2.5 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                {loading ? 'Enregistrement en cours...' : editing ? 'Enregistrer les modifications' : 'Ajouter le véhicule'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteConfirm && (
+        <ConfirmModal 
+          title="Supprimer le véhicule"
+          message={`Êtes-vous sûr de vouloir supprimer le véhicule « ${deleteConfirm.design} » ? Cette action est définitive et entraînera la perte de toutes les données associées.`}
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteConfirm(null)}
+        />
+      )}
     </div>
   )
 }

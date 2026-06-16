@@ -1,0 +1,35 @@
+-- Clients (8)
+INSERT INTO client (idcli, nom, contact) VALUES
+('C001', 'RAKOTO Jean', '034 12 345 67'),
+('C002', 'RABEARIVELO Lala', '033 98 765 43'),
+('C003', 'ANDRIAMANGA Pierre', '032 11 223 34'),
+('C004', 'RAZAFINDRAKOTO Miora', '034 55 667 78'),
+('C005', 'RAMANANTSOA Hery', '033 44 556 67'),
+('C006', 'RASOLOFONIRINA Tina', '032 77 889 90'),
+('C007', 'ANDRIANARIVELO Solo', '034 22 334 45'),
+('C008', 'RAKOTOMALALA Fara', '033 66 778 89')
+ON CONFLICT (idcli) DO NOTHING;
+
+-- Voitures (8)
+INSERT INTO voiture (idvoit, design, prix, nombre) VALUES
+('V001', 'TOYOTA HILUX', 35000000, 3),
+('V002', 'MITSUBISHI PAJERO', 40000000, 2),
+('V003', 'PEUGEOT 308', 5000000, 10),
+('V004', 'MERCEDES BENZ C200', 25000000, 4),
+('V005', 'BMW X5', 45000000, 1),
+('V006', 'RENAULT KOLEOS', 18000000, 5),
+('V007', 'KIA SPORTAGE', 15000000, 6),
+('V008', 'NISSAN NAVARA', 32000000, 2)
+ON CONFLICT (idvoit) DO NOTHING;
+
+-- Achats (8)
+INSERT INTO achat (numachat, idcli, idvoit, date, qte) VALUES
+('ACH001', 'C001', 'V001', '2026-01-15', 1),
+('ACH002', 'C002', 'V003', '2026-02-20', 2),
+('ACH003', 'C003', 'V002', '2026-03-10', 1),
+('ACH004', 'C004', 'V005', '2026-04-05', 1),
+('ACH005', 'C005', 'V006', '2026-04-18', 1),
+('ACH006', 'C001', 'V004', '2026-05-22', 1),
+('ACH007', 'C006', 'V007', '2026-05-30', 3),
+('ACH008', 'C007', 'V008', '2026-06-12', 1)
+ON CONFLICT (numachat) DO NOTHING;
