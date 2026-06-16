@@ -1,0 +1,44 @@
+-- AutoGest - Gestion de vente de voiture
+-- PostgreSQL
+
+CREATE TABLE IF NOT EXISTS client (
+    idcli VARCHAR(20) PRIMARY KEY,
+    nom VARCHAR(100) NOT NULL,
+    contact VARCHAR(50) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS voiture (
+    idvoit VARCHAR(20) PRIMARY KEY,
+    design VARCHAR(100) NOT NULL,
+    prix INTEGER NOT NULL,
+    nombre INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS achat (
+    numachat VARCHAR(20) PRIMARY KEY,
+    idcli VARCHAR(20) NOT NULL REFERENCES client(idcli),
+    idvoit VARCHAR(20) NOT NULL REFERENCES voiture(idvoit),
+    date DATE NOT NULL DEFAULT CURRENT_DATE,
+    qte INTEGER NOT NULL CHECK (qte > 0)
+);
+
+-- Trigger: soustraire le stock après achat
+CREATE OR REPLACE FUNCTION update_stock()
+RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE voiture SET nombre = nombre - NEW.qte WHERE idvoit = NEW.idvoit;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS after_achat ON achat;
+CREATE TRIGGER after_achat
+    AFTER INSERT ON achat
+    FOR EACH ROW EXECUTE FUNCTION update_stock();
+
+-- Données de test
+INSERT INTO client VALUES ('CLI001','NJIVASON Eric','034 12 543 11') ON CONFLICT DO NOTHING;
+INSERT INTO client VALUES ('CLI002','RABE Hery','033 45 678 90') ON CONFLICT DO NOTHING;
+INSERT INTO voiture VALUES ('VOI001','MITSUBISHI',40000000,5) ON CONFLICT DO NOTHING;
+INSERT INTO voiture VALUES ('VOI002','PEUGEOT',5000000,10) ON CONFLICT DO NOTHING;
+INSERT INTO voiture VALUES ('VOI003','TOYOTA',15000000,8) ON CONFLICT DO NOTHING;
