@@ -52,7 +52,9 @@ npm run dev
 ### Facturation
 
 ![Facture](screenshots/facture.png)
+### Achat
 
+![Achats](screenshots/achats.png)
 ## Auteur
 
 Projet réalisé dans le cadre d'un apprentissage du développement web full-stack.
