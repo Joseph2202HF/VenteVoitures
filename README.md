@@ -1,52 +1,59 @@
-# AutoGest — Gestion de vente de voiture
+# AutoGest
 
-## Stack
-- **Frontend** : React + Vite + TailwindCSS + Recharts
-- **Backend** : PHP pur (REST API)
-- **BDD** : PostgreSQL
+Application web de gestion de vente de véhicules.
+
+## Fonctionnalités
+
+* Gestion des clients
+* Gestion du stock de véhicules
+* Enregistrement des achats
+* Tableau de bord statistique
+* Génération de factures
+* Recherche et filtrage des données
+
+## Technologies
+
+* React + Vite
+* Tailwind CSS
+* Recharts
+* PHP (API REST)
+* PostgreSQL
 
 ## Installation
 
-### 1. Base de données
+### Backend
+
 ```bash
-psql -U postgres
-CREATE DATABASE autogest;
-\c autogest
-\i backend/schema.sql
+# Configurer votre serveur web
+# Importer le schéma SQL fourni
 ```
 
-### 2. Variables d'environnement (optionnel)
-Configurer dans `backend/config/database.php` ou via variables d'env :
-```
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=autogest
-DB_USER=postgres
-DB_PASS=password
-```
+### Frontend
 
-### 3. Backend (Apache/Nginx)
-- Placer le dossier `backend/` dans ton serveur web
-- Activer `mod_rewrite` (Apache)
-- Ex: `http://localhost/autogest/backend/`
-
-### 4. Frontend
 ```bash
-cd frontend
 npm install
 npm run dev
 ```
-Le proxy Vite redirige `/api` → `http://localhost/autogest/backend`
 
-## Routes API
+## Aperçu
 
-| Méthode | Route | Description |
-|---------|-------|-------------|
-| GET/POST | `/clients` | Lister / Créer |
-| GET/PUT/DELETE | `/clients/:id` | Détail / Modifier / Supprimer |
-| GET/POST | `/voitures?q=` | Lister (avec recherche LIKE) / Créer |
-| GET/PUT/DELETE | `/voitures/:id` | ... |
-| GET/POST | `/achats?from=&to=` | Lister (filtre dates) / Créer |
-| DELETE | `/achats/:id` | Supprimer (stock restauré) |
-| GET | `/stats/recettes` | Recettes 6 derniers mois |
-| GET | `/stats/facture?idcli=` | Facture d'un client |
+### Tableau de bord
+
+![Dashboard](screenshots/dashboard.png)
+
+### Gestion des véhicules
+
+![Voitures](screenshots/voitures.png)
+
+### Gestion des clients
+
+![Clients](screenshots/clients.png)
+
+### Facturation
+
+![Facture](screenshots/facture.png)
+
+## Auteur
+
+Projet réalisé dans le cadre d'un apprentissage du développement web full-stack.
+
